@@ -6,7 +6,7 @@ pydantic==2.10.6
 email-validator==2.2.0
 python-multipart==0.0.9
 pymongo==4.8.0
-numpy==2.0.2
+numpy==1.26.4
 sentence-transformers==3.0.1
 
 # File processing
@@ -16,4 +16,5 @@ pytesseract==0.3.13
 Pillow==10.4.0
 
 # NLP
-spacy==3.8.4
+spacy==3.7.5
+

@@ -98,6 +98,7 @@ async def check_score(
     resumes: List[UploadFile] = File(..., description="Upload 1-1000 resume files"),
     jd_text: str = Form(..., description="Job description as text"),
     job_name: Optional[str] = Form(None),
+    min_overall_score: Optional[float] = Form(None, description="Required minimum overall score as 0..1"),
     scan_id: Optional[str] = Form(None, description="Client-generated id for progress updates"),
     current_user=Depends(get_current_user),
 ) -> ScoreResponse:
@@ -199,11 +200,20 @@ async def check_score(
 
     results_sorted = sorted(results, key=lambda r: r.score, reverse=True)
 
-    quota = ScoreQuota(min_overall_score=MIN_ACCEPT_SCORE)
-    min_pct = int(round(MIN_ACCEPT_SCORE * 100))
+    effective_min_accept_score = MIN_ACCEPT_SCORE
+    if min_overall_score is not None:
+        try:
+            effective_min_accept_score = float(min_overall_score)
+        except Exception:
+            raise HTTPException(status_code=422, detail="min_overall_score must be a number")
+        if effective_min_accept_score < 0.0 or effective_min_accept_score > 1.0:
+            raise HTTPException(status_code=422, detail="min_overall_score must be between 0 and 1")
+
+    quota = ScoreQuota(min_overall_score=effective_min_accept_score)
+    min_pct = int(round(effective_min_accept_score * 100))
     enriched: List[ScoreItem] = []
     for item in results_sorted:
-        if item.score >= MIN_ACCEPT_SCORE:
+        if item.score >= effective_min_accept_score:
             item.status = "accepted"
             item.rejection_reason = None
         else:

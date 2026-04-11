@@ -72,6 +72,10 @@ export default function HistoryPage() {
   }, []);
 
   const selectedJob = jobs.find((j) => j.id === jobId) || null;
+  const selectedJdText = typeof selectedJob?.jd_text === 'string' ? selectedJob.jd_text.trim() : '';
+  const selectedJobLabel = selectedJob
+    ? ((selectedJob.job_name && selectedJob.job_name.trim()) ? selectedJob.job_name.trim() : 'Current JD')
+    : 'All (legacy)';
 
   const avgScore = selectedJob?.avg_score != null
     ? Math.round(selectedJob.avg_score * 100)
@@ -114,11 +118,11 @@ export default function HistoryPage() {
                 aria-label="Select job description"
               >
                 {jobs.length === 0 ? (
-                  <option value="">No job descriptions yet</option>
+                  <option className='bg-transparent' value="">No job descriptions yet</option>
                 ) : (
                   jobs.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {(j.job_name && j.job_name.trim()) ? j.job_name : `JD ${j.jd_hash.slice(0, 8)}`} ({j.total_scans})
+                    <option className='bg-slate-900 rounded-xl' key={j.id} value={j.id}>
+                      {((j.job_name && j.job_name.trim()) ? j.job_name.trim() : 'Current JD')} ({j.total_scans})
                     </option>
                   ))
                 )}
@@ -164,11 +168,18 @@ export default function HistoryPage() {
             <div className={card}>
               <div className={label}>Job</div>
               <div className="mt-1 text-sm font-semibold text-slate-100">
-                {selectedJob
-                  ? ((selectedJob.job_name && selectedJob.job_name.trim()) ? selectedJob.job_name : selectedJob.jd_hash.slice(0, 8))
-                  : 'All (legacy)'}
+                {selectedJob ? `${selectedJobLabel} (${selectedJob.total_scans})` : selectedJobLabel}
               </div>
             </div>
+          </div>
+        )}
+
+        {selectedJdText && (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Job Description</div>
+            <p className="mt-3 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-slate-900/60 p-4 text-sm leading-6 text-slate-200">
+              {selectedJdText}
+            </p>
           </div>
         )}
 

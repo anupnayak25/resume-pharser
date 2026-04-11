@@ -100,6 +100,7 @@ export default function ResultPage() {
 
   const minOverallScore = data?.quota?.min_overall_score ?? 0.45;
   const quotaPct = Math.round(minOverallScore * 100);
+  const jdText = typeof data?.jd_text === 'string' ? data.jd_text.trim() : '';
 
   const resultsRaw = Array.isArray(data.results) ? data.results : [];
   const errors = Array.isArray(data.errors) ? data.errors : [];
@@ -148,6 +149,15 @@ export default function ResultPage() {
             </button>
           </div>
         </div>
+
+      {jdText && (
+        <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Job Description</div>
+          <p className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-slate-900/60 p-4 text-sm leading-6 text-slate-200">
+            {jdText}
+          </p>
+        </div>
+      )}
 
       {/* Summary strip */}
       {best && (

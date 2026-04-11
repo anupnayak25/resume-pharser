@@ -247,6 +247,7 @@ def list_jobs(user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
                 "user_id": 1,
                 "job_name": 1,
                 "jd_hash": 1,
+                "jd_text": 1,
                 "created_at": 1,
                 "total_scans": 1,
                 "avg_score": 1,

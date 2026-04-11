@@ -41,12 +41,13 @@ export const api = {
     fetch(`${BASE_URL}/me`, { headers: authHeaders() }).then(handleResponse),
 
   // Score/Upload
-  checkScore: (resumes, jd_text, job_name, scan_id) => {
+  checkScore: (resumes, jd_text, job_name, scan_id, min_overall_score) => {
     const form = new FormData();
     resumes.forEach((f) => form.append('resumes', f));
     form.append('jd_text', jd_text);
     if (job_name) form.append('job_name', job_name);
     if (scan_id) form.append('scan_id', scan_id);
+    if (typeof min_overall_score === 'number') form.append('min_overall_score', String(min_overall_score));
     return fetch(`${BASE_URL}/check-score`, {
       method: 'POST',
       headers: authHeaders(),

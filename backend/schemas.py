@@ -70,6 +70,7 @@ class JobSummary(BaseModel):
     id: int
     job_name: Optional[str]
     jd_hash: str
+    jd_text: Optional[str] = None
     created_at: datetime
     total_scans: int
     avg_score: Optional[float] = None

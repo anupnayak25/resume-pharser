@@ -5,6 +5,7 @@ export default function DashboardPage() {
   const [files, setFiles] = useState([]);
   const [jdText, setJdText] = useState('');
   const [jobName, setJobName] = useState('');
+  const [requiredQuotaPct, setRequiredQuotaPct] = useState('45');
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef();
@@ -32,6 +33,12 @@ export default function DashboardPage() {
     if (!files.length) { setError('Please upload at least one resume.'); return; }
     if (!jdText.trim()) { setError('Please paste a job description.'); return; }
 
+    const quotaNumber = Number(requiredQuotaPct);
+    if (!Number.isFinite(quotaNumber) || quotaNumber < 0 || quotaNumber > 100) {
+      setError('Required quota must be a number between 0 and 100.');
+      return;
+    }
+
     const scanId =
       (globalThis.crypto && globalThis.crypto.randomUUID && globalThis.crypto.randomUUID()) ||
       `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -42,6 +49,7 @@ export default function DashboardPage() {
         files,
         jdText,
         jobName: jobName || undefined,
+        minOverallScore: quotaNumber / 100,
       },
     });
   };
@@ -75,7 +83,7 @@ export default function DashboardPage() {
                 id="drop-zone"
                 className={
                   [
-                    'relative mt-3 cursor-pointer rounded-2xl border-2 border-dashed px-6 py-12 text-center transition',
+                    'relative mt-3 flex min-h-[250px] cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition',
                     dragging
                       ? 'border-indigo-400 bg-indigo-500/5 shadow-[0_0_40px_rgba(99,102,241,0.18)]'
                       : 'border-white/15 hover:border-indigo-400 hover:bg-indigo-500/5',
@@ -94,12 +102,14 @@ export default function DashboardPage() {
                   className="absolute inset-0 opacity-0 pointer-events-none"
                   onChange={(e) => addFiles(e.target.files)}
                 />
-                <div className="text-4xl">📂</div>
-                <div className="mt-2 text-base font-semibold">
-                  {dragging ? 'Drop files here' : 'Click or drag & drop resumes'}
-                </div>
-                <div className="mt-1 text-xs text-slate-400">
-                  Supports PDF, DOCX, TXT · Max 1000 files
+                <div>
+                  <div className="text-4xl">📂</div>
+                  <div className="mt-2 text-base font-semibold">
+                    {dragging ? 'Drop files here' : 'Click or drag & drop resumes'}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Supports PDF, DOCX, TXT · Max 1000 files
+                  </div>
                 </div>
               </div>
                
@@ -141,6 +151,21 @@ export default function DashboardPage() {
                   placeholder="Paste the full job description here…"
                   value={jdText}
                   onChange={(e) => setJdText(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className={label} htmlFor="required-quota">Required Quota (%)</label>
+                <input
+                  id="required-quota"
+                  className={input + ' quota-input no-spinner'}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  placeholder="45"
+                  value={requiredQuotaPct}
+                  onChange={(e) => setRequiredQuotaPct(e.target.value)}
                 />
               </div>
                <div className="mt-6">

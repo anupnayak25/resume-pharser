@@ -30,6 +30,7 @@ async def jobs(
                 id=int(r["id"]),
                 job_name=r["job_name"],
                 jd_hash=r["jd_hash"],
+                jd_text=r.get("jd_text"),
                 created_at=parse_iso(r["created_at"]),
                 total_scans=int(r["total_scans"] or 0),
                 avg_score=float(r["avg_score"]) if r["avg_score"] is not None else None,

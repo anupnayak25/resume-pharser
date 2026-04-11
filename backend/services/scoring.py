@@ -9,6 +9,11 @@ from services.nlp import extract_skill_phrases
 from services.text_utils import clean_text, detect_years
 
 
+def _cosine_to_score(raw_cosine: float) -> float:
+    """Map cosine similarity to score without introducing a 0.5 floor for unrelated text."""
+    return float(max(0.0, min(1.0, raw_cosine)))
+
+
 def score_resume_against_jd(resume_text: str, jd_text: str) -> Dict[str, Any]:
     resume_text = clean_text(resume_text)
     jd_text = clean_text(jd_text)
@@ -19,7 +24,7 @@ def score_resume_against_jd(resume_text: str, jd_text: str) -> Dict[str, Any]:
 
     embeddings = embed_texts([resume_text[:25000], jd_text[:25000]])
     base_sim_raw = float(cosine_similarity_matrix(embeddings[:1], embeddings[1:])[0][0])
-    base_sim = max(0.0, min(1.0, (base_sim_raw + 1.0) / 2.0))
+    base_sim = _cosine_to_score(base_sim_raw)
 
     resume_phrases = extract_skill_phrases(resume_text)
     jd_phrases = extract_skill_phrases(jd_text)
@@ -34,11 +39,12 @@ def score_resume_against_jd(resume_text: str, jd_text: str) -> Dict[str, Any]:
 
         import numpy as np
 
-        best = np.max(sim, axis=1)
+        # Score against JD requirements: each JD phrase should be covered by resume content.
+        best = np.max(sim, axis=0)
         k = min(20, best.shape[0])
         topk = np.sort(best)[-k:]
         skill_score_raw = float(np.mean(topk))
-        skill_score = max(0.0, min(1.0, (skill_score_raw + 1.0) / 2.0))
+        skill_score = _cosine_to_score(skill_score_raw)
 
     resume_years = detect_years(resume_text)
     jd_years = detect_years(jd_text)

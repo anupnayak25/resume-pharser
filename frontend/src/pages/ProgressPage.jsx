@@ -24,6 +24,7 @@ export default function ProgressPage() {
   const files = state?.files;
   const jdText = state?.jdText;
   const jobName = state?.jobName;
+  const minOverallScore = state?.minOverallScore;
 
   const [percent, setPercent] = useState(0);
   const [status, setStatus] = useState('Starting…');
@@ -114,14 +115,20 @@ export default function ProgressPage() {
         };
 
         // Kick off the actual scoring request
-        const data = await api.checkScore(files, jdText, jobName || undefined, scanId);
+        const data = await api.checkScore(files, jdText, jobName || undefined, scanId, minOverallScore);
         
         if (!isMountedRef.current) {
           ws.close();
           return;
         }
         
-        sessionStorage.setItem('scoreResult', JSON.stringify(data));
+        sessionStorage.setItem(
+          'scoreResult',
+          JSON.stringify({
+            ...data,
+            jd_text: jdText,
+          })
+        );
         navigate('/results', { replace: true });
       } catch (err) {
         if (!isMountedRef.current) return;
@@ -142,7 +149,7 @@ export default function ProgressPage() {
         }
       } catch (_) {}
     };
-  }, [scanId, files, jdText, jobName, socketUrl, navigate, token]);
+  }, [scanId, files, jdText, jobName, minOverallScore, socketUrl, navigate, token]);
 
   const card = 'rounded-2xl border border-white/10 bg-white/5 shadow-xl backdrop-blur-xl';
 

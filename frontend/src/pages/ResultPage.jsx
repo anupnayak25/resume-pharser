@@ -1,27 +1,40 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function scoreBadge(score) {
+function scoreBadgeClass(score) {
   const pct = Math.round(score * 100);
-  if (pct >= 70) return 'badge-green';
-  if (pct >= 45) return 'badge-yellow';
-  return 'badge-red';
+  if (pct >= 70) return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200';
+  if (pct >= 45) return 'border-amber-400/30 bg-amber-400/10 text-amber-200';
+  return 'border-red-400/30 bg-red-400/10 text-red-200';
 }
 
 function ScoreBar({ label, value }) {
   const pct = value != null ? Math.round(value * 100) : null;
-  const color = pct == null ? 'var(--muted)' : pct >= 70 ? 'var(--green)' : pct >= 45 ? 'var(--yellow)' : 'var(--red)';
+  const barClass = pct == null
+    ? 'bg-white/10'
+    : pct >= 70
+      ? 'bg-emerald-400'
+      : pct >= 45
+        ? 'bg-amber-400'
+        : 'bg-red-400';
+  const textClass = pct == null
+    ? 'text-slate-400'
+    : pct >= 70
+      ? 'text-emerald-200'
+      : pct >= 45
+        ? 'text-amber-200'
+        : 'text-red-200';
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div className="score-row">
-        <span className="score-key">{label}</span>
-        <span className="score-val" style={{ color }}>{pct != null ? `${pct}%` : '—'}</span>
+    <div className="mb-3">
+      <div className="flex items-center justify-between border-b border-white/10 py-2 text-xs">
+        <span className="text-slate-400">{label}</span>
+        <span className={['font-semibold', textClass].join(' ')}>{pct != null ? `${pct}%` : '—'}</span>
       </div>
       {pct != null && (
-        <div className="progress-track" style={{ marginTop: 4 }}>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
           <div
-            className="progress-fill"
-            style={{ width: `${pct}%`, background: color }}
+            className={['h-full rounded-full transition-[width] duration-700', barClass].join(' ')}
+            style={{ width: `${pct}%` }}
           />
         </div>
       )}
@@ -31,21 +44,29 @@ function ScoreBar({ label, value }) {
 
 function ResultCard({ item, rank }) {
   const overallPct = Math.round(item.score * 100);
-  const rankColors = ['#ffd700', '#c0c0c0', '#cd7f32'];
   const rankIcon = ['🥇', '🥈', '🥉'][rank] ?? `#${rank + 1}`;
+  const rankText = rank === 0 ? 'text-yellow-300' : rank === 1 ? 'text-slate-200' : rank === 2 ? 'text-amber-400' : 'text-slate-400';
 
   return (
-    <div className="card result-card fade-up" style={{ animationDelay: `${rank * 0.07}s` }}>
-      <div className="result-rank">
-        <span style={{ color: rankColors[rank] ?? 'var(--muted)', fontSize: '1rem' }}>{rankIcon}</span>
-        {' '}Rank {rank + 1}
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur-xl">
+      <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
+        <span className={['mr-2 text-base', rankText].join(' ')}>{rankIcon}</span>
+        Rank {rank + 1}
       </div>
-      <div className="result-filename">📄 {item.filename}</div>
+      <div className="mt-2 break-all text-sm font-semibold">📄 {item.filename}</div>
 
-      {/* Big score */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 18 }}>
-        <div className="big-score">{overallPct}%</div>
-        <span className={'badge ' + scoreBadge(item.score)} style={{ marginBottom: 6 }}>
+      <div className="mt-4 flex items-end gap-3">
+        <div className="text-5xl font-extrabold leading-none tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">
+          {overallPct}%
+        </div>
+        <span
+          className={
+            [
+              'mb-1 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold',
+              scoreBadgeClass(item.score),
+            ].join(' ')
+          }
+        >
           {overallPct >= 70 ? 'Strong Match' : overallPct >= 45 ? 'Potential' : 'Weak Fit'}
         </span>
       </div>
@@ -56,9 +77,9 @@ function ResultCard({ item, rank }) {
       <ScoreBar label="Experience Match" value={item.experience_score} />
 
       {item.extracted_years != null && (
-        <div className="score-row" style={{ marginTop: 4 }}>
-          <span className="score-key">Experience (yrs)</span>
-          <span className="score-val" style={{ color: 'var(--accent2)' }}>{item.extracted_years.toFixed(1)}</span>
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <span className="text-slate-400">Experience (yrs)</span>
+          <span className="font-semibold text-violet-200">{item.extracted_years.toFixed(1)}</span>
         </div>
       )}
     </div>
@@ -77,86 +98,121 @@ export default function ResultPage() {
 
   if (!data) return null;
 
-  const best = data.results[0];
+  const minOverallScore = data?.quota?.min_overall_score ?? 0.45;
+  const quotaPct = Math.round(minOverallScore * 100);
+
+  const resultsRaw = Array.isArray(data.results) ? data.results : [];
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+
+  const normalizeItem = (item) => {
+    if (!item) return item;
+    const score = typeof item.score === 'number' ? item.score : 0;
+    const status = item.status ?? (score >= minOverallScore ? 'accepted' : 'rejected');
+    const rejection_reason =
+      status === 'rejected'
+        ? (item.rejection_reason ?? `Overall score ${Math.round(score * 100)}% is below the required quota of ${quotaPct}%`)
+        : null;
+    return { ...item, status, rejection_reason };
+  };
+
+  const all = resultsRaw.map(normalizeItem);
+  const accepted = all.filter((r) => r.status !== 'rejected');
+  const rejected = all.filter((r) => r.status === 'rejected');
+
+  const best = accepted[0] ?? all[0];
 
   return (
-    <div className="container" style={{ paddingBottom: 60 }}>
-      {/* Header */}
-      <div className="page-header fade-up">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: '2rem' }}>📊</span>
-            <div>
-              <h1 className="page-title">
-                Results {data.job_name ? `— ${data.job_name}` : ''}
-              </h1>
-              <p className="page-sub">
-                {data.results.length} resume{data.results.length !== 1 ? 's' : ''} analysed
-                {data.errors.length > 0 && `, ${data.errors.length} error${data.errors.length !== 1 ? 's' : ''}`}
-              </p>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-6xl px-6 pb-16">
+        <div className="py-10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">📊</span>
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight">
+                  Results {data.job_name ? `— ${data.job_name}` : ''}
+                </h1>
+                <p className="mt-1 text-sm text-slate-400">
+                  {resultsRaw.length} resume{resultsRaw.length !== 1 ? 's' : ''} analysed
+                  {errors.length > 0 && `, ${errors.length} error${errors.length !== 1 ? 's' : ''}`}
+                </p>
+              </div>
             </div>
+
+            <button
+              id="new-analysis-btn"
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+              onClick={() => { sessionStorage.removeItem('scoreResult'); navigate('/'); }}
+            >
+              ← New Analysis
+            </button>
           </div>
-          <button
-            id="new-analysis-btn"
-            className="btn btn-ghost"
-            onClick={() => { sessionStorage.removeItem('scoreResult'); navigate('/'); }}
-          >
-            ← New Analysis
-          </button>
         </div>
-      </div>
 
       {/* Summary strip */}
       {best && (
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 32 }} className="fade-up fade-up-d1">
-          <div className="card stat-card" style={{ flex: '1 1 160px' }}>
-            <div className="stat-label">Top Candidate</div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', marginTop: 4, color: 'var(--text)', wordBreak: 'break-all' }}>
-              🥇 {best.filename}
-            </div>
+        <div className="flex flex-wrap gap-3">
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Top Candidate</div>
+            <div className="mt-2 break-all text-sm font-semibold">🥇 {best.filename}</div>
           </div>
-          <div className="card stat-card" style={{ flex: '1 1 130px' }}>
-            <div className="stat-label">Best Score</div>
-            <div className="stat-value" style={{ background: 'linear-gradient(135deg,var(--accent),var(--accent2))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Best Score</div>
+            <div className="mt-1 text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">
               {Math.round(best.score * 100)}%
             </div>
           </div>
-          <div className="card stat-card" style={{ flex: '1 1 130px' }}>
-            <div className="stat-label">Analysed</div>
-            <div className="stat-value">{data.results.length}</div>
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Required Quota</div>
+            <div className="mt-1 text-3xl font-extrabold tracking-tight">≥ {quotaPct}%</div>
+            <div className="mt-1 text-xs text-slate-400">Overall match score</div>
           </div>
-          {data.errors.length > 0 && (
-            <div className="card stat-card" style={{ flex: '1 1 130px' }}>
-              <div className="stat-label">Errors</div>
-              <div className="stat-value" style={{ color: 'var(--red)' }}>{data.errors.length}</div>
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Analysed</div>
+            <div className="mt-1 text-3xl font-extrabold tracking-tight">{resultsRaw.length}</div>
+          </div>
+          {errors.length > 0 && (
+            <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
+              <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Errors</div>
+              <div className="mt-1 text-3xl font-extrabold tracking-tight text-red-300">{errors.length}</div>
             </div>
           )}
         </div>
       )}
 
       {/* Result cards grid */}
-      <div className="result-grid">
-        {data.results.map((item, i) => (
-          <ResultCard key={item.filename + i} item={item} rank={i} />
-        ))}
-      </div>
+      {accepted.length > 0 ? (
+        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {accepted.map((item, i) => (
+            <ResultCard key={item.filename + i} item={item} rank={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-300 shadow-xl backdrop-blur-xl">
+          No resumes met the required quota of <span className="font-semibold text-slate-100">{quotaPct}%</span>.
+        </div>
+      )}
 
-      {/* Errors */}
-      {data.errors.length > 0 && (
-        <div style={{ marginTop: 32 }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 14, color: 'var(--red)' }}>
-            ⚠️ Processing Errors
-          </h2>
-          <div className="table-wrap">
-            <table>
+      {/* Rejected */}
+      {rejected.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-sm font-bold text-slate-200">Rejected</h2>
+          <p className="mt-1 text-xs text-slate-400">Resumes below the required quota (≥ {quotaPct}% overall match).</p>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10">
+            <table className="w-full border-collapse">
               <thead>
-                <tr><th>File</th><th>Reason</th></tr>
+                <tr className="bg-white/5">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">File</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Score</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Comment</th>
+                </tr>
               </thead>
               <tbody>
-                {data.errors.map((e, i) => (
-                  <tr key={i}>
-                    <td style={{ color: 'var(--muted)' }}>📄 {e.filename}</td>
-                    <td style={{ color: 'var(--red)' }}>{e.error}</td>
+                {rejected.map((r, i) => (
+                  <tr key={r.filename + i} className="border-t border-white/10">
+                    <td className="px-4 py-3 text-sm text-slate-300">📄 {r.filename}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-red-200">{Math.round(r.score * 100)}%</td>
+                    <td className="px-4 py-3 text-sm text-slate-200">{r.rejection_reason || 'Below quota'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -164,6 +220,32 @@ export default function ResultPage() {
           </div>
         </div>
       )}
+
+      {/* Errors */}
+      {errors.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-sm font-bold text-red-300">⚠️ Processing Errors</h2>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-white/5">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">File</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {errors.map((e, i) => (
+                  <tr key={i} className="border-t border-white/10">
+                    <td className="px-4 py-3 text-sm text-slate-300">📄 {e.filename}</td>
+                    <td className="px-4 py-3 text-sm text-red-200">{e.error}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from backend.services.text_utils import clean_text
+from services.text_utils import clean_text
 
 
 def get_extension(filename: str) -> str:

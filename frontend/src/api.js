@@ -41,11 +41,12 @@ export const api = {
     fetch(`${BASE_URL}/me`, { headers: authHeaders() }).then(handleResponse),
 
   // Score/Upload
-  checkScore: (resumes, jd_text, job_name) => {
+  checkScore: (resumes, jd_text, job_name, scan_id) => {
     const form = new FormData();
     resumes.forEach((f) => form.append('resumes', f));
     form.append('jd_text', jd_text);
     if (job_name) form.append('job_name', job_name);
+    if (scan_id) form.append('scan_id', scan_id);
     return fetch(`${BASE_URL}/check-score`, {
       method: 'POST',
       headers: authHeaders(),
@@ -54,8 +55,16 @@ export const api = {
   },
 
   // History
-  history: (limit = 50, offset = 0) =>
-    fetch(`${BASE_URL}/history?limit=${limit}&offset=${offset}`, {
+  jobs: (limit = 50, offset = 0) =>
+    fetch(`${BASE_URL}/jobs?limit=${limit}&offset=${offset}`, {
       headers: authHeaders(),
     }).then(handleResponse),
+
+  history: (limit = 50, offset = 0, jobId) => {
+    const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (jobId != null) qs.set('job_id', String(jobId));
+    return fetch(`${BASE_URL}/history?${qs.toString()}`, {
+      headers: authHeaders(),
+    }).then(handleResponse);
+  },
 };

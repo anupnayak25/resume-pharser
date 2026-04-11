@@ -6,8 +6,8 @@ from typing import List
 
 from fastapi import HTTPException
 
-from backend.core.config import SPACY_MODEL
-from backend.services.text_utils import clean_text
+from core.config import SPACY_MODEL
+from services.text_utils import clean_text
 
 
 _SPACY_NLP = None

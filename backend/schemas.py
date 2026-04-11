@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -34,6 +34,12 @@ class ScoreItem(BaseModel):
     skill_score: Optional[float] = None
     experience_score: Optional[float] = None
     extracted_years: Optional[float] = None
+    status: Optional[Literal["accepted", "rejected"]] = None
+    rejection_reason: Optional[str] = None
+
+
+class ScoreQuota(BaseModel):
+    min_overall_score: float = Field(ge=0.0, le=1.0)
 
 
 class ScoreError(BaseModel):
@@ -43,6 +49,7 @@ class ScoreError(BaseModel):
 
 class ScoreResponse(BaseModel):
     job_name: Optional[str] = None
+    quota: Optional[ScoreQuota] = None
     results: List[ScoreItem]
     errors: List[ScoreError] = []
 
@@ -57,3 +64,14 @@ class HistoryItem(BaseModel):
     experience_score: Optional[float]
     extracted_years: Optional[float]
     created_at: datetime
+
+
+class JobSummary(BaseModel):
+    id: int
+    job_name: Optional[str]
+    jd_hash: str
+    created_at: datetime
+    total_scans: int
+    avg_score: Optional[float] = None
+    best_score: Optional[float] = None
+    last_scanned_at: Optional[datetime] = None

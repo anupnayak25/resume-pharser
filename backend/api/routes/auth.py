@@ -4,10 +4,10 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.core import db as db_layer
-from backend.core.security import hash_password, token_for_user_id, verify_password, get_current_user
-from backend.core.time import parse_iso
-from backend.schemas import LoginRequest, SignupRequest, TokenResponse, UserResponse
+from core import db as db_layer
+from core.security import get_current_user, hash_password, token_for_user_id, verify_password
+from core.time import parse_iso
+from schemas import LoginRequest, SignupRequest, TokenResponse, UserResponse
 
 
 router = APIRouter(tags=["auth"])

@@ -5,7 +5,7 @@ from typing import List
 
 from fastapi import HTTPException
 
-from backend.core.config import SBERT_MODEL
+from core.config import SBERT_MODEL
 
 
 _SBERT_MODEL = None

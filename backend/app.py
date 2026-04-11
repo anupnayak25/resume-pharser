@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.api.app_factory import create_app
+from api.app_factory import create_app
 
 app = create_app()
 

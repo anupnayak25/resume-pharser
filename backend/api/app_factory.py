@@ -6,9 +6,9 @@ from typing import Any, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import auth, history, score
-from backend.core.config import APP_NAME, CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS
-from backend.core.db import init_db
+from api.routes import auth, history, score
+from core.config import APP_NAME, CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS
+from core.db import init_db
 
 
 def create_app() -> FastAPI:

@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import ProgressPage from './pages/ProgressPage';
 import ResultPage from './pages/ResultPage';
 import HistoryPage from './pages/HistoryPage';
 import Navbar from './components/Navbar';
-import './index.css';
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('token') ? children : <Navigate to="/login" replace />;
@@ -40,6 +40,16 @@ export default function App() {
             <PrivateRoute>
               <AppLayout>
                 <ResultPage />
+              </AppLayout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/progress"
+          element={
+            <PrivateRoute>
+              <AppLayout>
+                <ProgressPage />
               </AppLayout>
             </PrivateRoute>
           }

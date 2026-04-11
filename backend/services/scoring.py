@@ -4,9 +4,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 
-from backend.services.embeddings import cosine_similarity_matrix, embed_texts
-from backend.services.nlp import extract_skill_phrases
-from backend.services.text_utils import clean_text, detect_years
+from services.embeddings import cosine_similarity_matrix, embed_texts
+from services.nlp import extract_skill_phrases
+from services.text_utils import clean_text, detect_years
 
 
 def score_resume_against_jd(resume_text: str, jd_text: str) -> Dict[str, Any]:

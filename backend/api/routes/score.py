@@ -3,17 +3,75 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from jose import JWTError, jwt
 
-from backend.core import db as db_layer
-from backend.core.config import MAX_FILES_PER_REQUEST, PROCESS_CONCURRENCY
-from backend.core.security import get_current_user
-from backend.schemas import ScoreError, ScoreItem, ScoreResponse
-from backend.services.scoring import score_resume_against_jd
-from backend.services.text_extraction import extract_and_clean_text
+from core import db as db_layer
+from core.config import JWT_ALGORITHM, JWT_SECRET_KEY, MAX_FILES_PER_REQUEST, MIN_ACCEPT_SCORE, PROCESS_CONCURRENCY
+from core.progress import broker
+from core.security import get_current_user
+from schemas import ScoreError, ScoreItem, ScoreQuota, ScoreResponse
+from services.scoring import score_resume_against_jd
+from services.text_extraction import extract_and_clean_text
 
 
 router = APIRouter(tags=["scoring"])
+
+
+@router.websocket("/ws/progress/{scan_id}")
+async def progress_ws(websocket: WebSocket, scan_id: str) -> None:
+    # WebSockets can't reliably send Authorization headers from the browser;
+    # authenticate via `?token=`. Accept first so the browser doesn't report
+    # a failed handshake when we reject auth.
+    await websocket.accept()
+
+    user_id: int | None = None
+
+    def _user_id_from_token(token: str) -> int:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        sub = payload.get("sub")
+        if not sub:
+            raise ValueError("missing sub")
+        return int(sub)
+
+    # Backward-compatible: allow token in query string.
+    token_qs = websocket.query_params.get("token")
+    if token_qs:
+        try:
+            user_id = _user_id_from_token(token_qs)
+        except Exception:
+            user_id = None
+
+    # Preferred: client sends auth message after connect.
+    if user_id is None:
+        await websocket.send_json({"type": "auth_required"})
+        try:
+            msg = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+        except Exception:
+            await websocket.send_json({"type": "error", "message": "Auth timeout"})
+            await websocket.close(code=1008)
+            return
+
+        if not isinstance(msg, dict) or msg.get("type") != "auth" or not msg.get("token"):
+            await websocket.send_json({"type": "error", "message": "Invalid auth message"})
+            await websocket.close(code=1008)
+            return
+
+        try:
+            user_id = _user_id_from_token(str(msg.get("token")))
+        except (JWTError, ValueError):
+            await websocket.send_json({"type": "error", "message": "Invalid token"})
+            await websocket.close(code=1008)
+            return
+    await broker.connect(user_id, scan_id, websocket)
+    try:
+        # Keep the socket open; client doesn't need to send messages.
+        while True:
+            await websocket.receive()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await broker.disconnect(user_id, scan_id, websocket)
 
 
 @router.post("/check-score", response_model=ScoreResponse)
@@ -21,6 +79,7 @@ async def check_score(
     resumes: List[UploadFile] = File(..., description="Upload 1-1000 resume files"),
     jd_text: str = Form(..., description="Job description as text"),
     job_name: Optional[str] = Form(None),
+    scan_id: Optional[str] = Form(None, description="Client-generated id for progress updates"),
     current_user=Depends(get_current_user),
 ) -> ScoreResponse:
     if not resumes:
@@ -38,6 +97,22 @@ async def check_score(
     if not file_blobs:
         raise HTTPException(status_code=422, detail="All uploaded files were empty")
 
+    job = await asyncio.to_thread(db_layer.get_or_create_job, int(current_user["id"]), job_name, jd_text)
+    job_id = int(job["id"])
+
+    user_id = int(current_user["id"])
+    scan_key = scan_id.strip() if scan_id and scan_id.strip() else None
+    total = len(file_blobs)
+    processed = 0
+    processed_lock = asyncio.Lock()
+
+    async def push(event: dict) -> None:
+        if scan_key is None:
+            return
+        await broker.broadcast(user_id, scan_key, event)
+
+    await push({"type": "start", "total": total})
+
     async def process_one(filename: str, content_type: Optional[str], data: bytes) -> ScoreItem:
         extracted = await asyncio.to_thread(extract_and_clean_text, filename, content_type, data)
         if not extracted:
@@ -49,6 +124,7 @@ async def check_score(
         await asyncio.to_thread(
             db_layer.save_history,
             int(current_user["id"]),
+            job_id,
             job_name,
             filename,
             item.score,
@@ -63,8 +139,23 @@ async def check_score(
     semaphore = asyncio.Semaphore(PROCESS_CONCURRENCY)
 
     async def guarded(filename: str, content_type: Optional[str], data: bytes) -> ScoreItem:
+        nonlocal processed
         async with semaphore:
-            return await process_one(filename, content_type, data)
+            try:
+                return await process_one(filename, content_type, data)
+            finally:
+                async with processed_lock:
+                    processed += 1
+                    pct = int(round((processed / total) * 100)) if total else 100
+                await push(
+                    {
+                        "type": "progress",
+                        "processed": processed,
+                        "total": total,
+                        "percent": pct,
+                        "filename": filename,
+                    }
+                )
 
     tasks = [guarded(fn, ct, blob) for fn, ct, blob in file_blobs]
     gathered = await asyncio.gather(*tasks, return_exceptions=True)
@@ -81,10 +172,26 @@ async def check_score(
         results.append(item)
 
     if not results:
+        await push({"type": "error", "message": "No resumes processed successfully", "errors": [e.model_dump() for e in errors]})
         raise HTTPException(
             status_code=422,
             detail={"message": "No resumes processed successfully", "errors": [e.model_dump() for e in errors]},
         )
 
     results_sorted = sorted(results, key=lambda r: r.score, reverse=True)
-    return ScoreResponse(job_name=job_name, results=results_sorted, errors=errors)
+
+    quota = ScoreQuota(min_overall_score=MIN_ACCEPT_SCORE)
+    min_pct = int(round(MIN_ACCEPT_SCORE * 100))
+    enriched: List[ScoreItem] = []
+    for item in results_sorted:
+        if item.score >= MIN_ACCEPT_SCORE:
+            item.status = "accepted"
+            item.rejection_reason = None
+        else:
+            item.status = "rejected"
+            pct = int(round(item.score * 100))
+            item.rejection_reason = f"Overall score {pct}% is below the required quota of {min_pct}%"
+        enriched.append(item)
+
+    await push({"type": "done", "percent": 100})
+    return ScoreResponse(job_name=job_name, quota=quota, results=enriched, errors=errors)

@@ -20,9 +20,6 @@ router = APIRouter(tags=["scoring"])
 
 @router.websocket("/ws/progress/{scan_id}")
 async def progress_ws(websocket: WebSocket, scan_id: str) -> None:
-    # WebSockets can't reliably send Authorization headers from the browser;
-    # authenticate via `?token=`. Accept first so the browser doesn't report
-    # a failed handshake when we reject auth.
     await websocket.accept()
 
     user_id: int | None = None
@@ -44,31 +41,53 @@ async def progress_ws(websocket: WebSocket, scan_id: str) -> None:
 
     # Preferred: client sends auth message after connect.
     if user_id is None:
-        await websocket.send_json({"type": "auth_required"})
         try:
+            await websocket.send_json({"type": "auth_required"})
             msg = await asyncio.wait_for(websocket.receive_json(), timeout=10)
-        except Exception:
-            await websocket.send_json({"type": "error", "message": "Auth timeout"})
-            await websocket.close(code=1008)
+        except asyncio.TimeoutError:
+            try:
+                await websocket.send_json({"type": "error", "message": "Auth timeout"})
+                await websocket.close(code=1008)
+            except:
+                pass
+            return
+        except Exception as e:
+            try:
+                await websocket.send_json({"type": "error", "message": f"Connection error: {str(e)}"})
+                await websocket.close(code=1008)
+            except:
+                pass
             return
 
         if not isinstance(msg, dict) or msg.get("type") != "auth" or not msg.get("token"):
-            await websocket.send_json({"type": "error", "message": "Invalid auth message"})
-            await websocket.close(code=1008)
+            try:
+                await websocket.send_json({"type": "error", "message": "Invalid auth message"})
+                await websocket.close(code=1008)
+            except:
+                pass
             return
 
         try:
             user_id = _user_id_from_token(str(msg.get("token")))
         except (JWTError, ValueError):
-            await websocket.send_json({"type": "error", "message": "Invalid token"})
-            await websocket.close(code=1008)
+            try:
+                await websocket.send_json({"type": "error", "message": "Invalid token"})
+                await websocket.close(code=1008)
+            except:
+                pass
             return
+    
     await broker.connect(user_id, scan_id, websocket)
     try:
         # Keep the socket open; client doesn't need to send messages.
         while True:
-            await websocket.receive()
+            try:
+                msg = await websocket.receive()
+            except Exception as e:
+                raise
     except WebSocketDisconnect:
+        pass
+    except Exception as e:
         pass
     finally:
         await broker.disconnect(user_id, scan_id, websocket)

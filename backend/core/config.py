@@ -1,15 +1,44 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+
+def _load_local_env_file() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+_load_local_env_file()
 
 
 APP_NAME = "resume-pharser"
 
+
+def _env_str(name: str, default: str) -> str:
+    return (os.getenv(name, default) or "").strip()
+
 DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "..", "app.db"))
 
 # MongoDB (persistence)
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://MajroProjectFinalPhase:2uTx33HEBa6JTSXi@cluster0.gikpl8i.mongodb.net/?appName=Cluster0")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "resume_pharser")
+MONGO_URI = _env_str("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DB_NAME = _env_str("MONGO_DB_NAME", "resume_pharser")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-me")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

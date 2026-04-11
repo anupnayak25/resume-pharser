@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pymongo import MongoClient, ReturnDocument
 from pymongo.collection import Collection
 from pymongo.database import Database
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import ConfigurationError, DuplicateKeyError
 from pymongo.operations import IndexModel
 
 from core.config import MONGO_DB_NAME, MONGO_URI
@@ -20,7 +20,12 @@ _CLIENT: MongoClient | None = None
 def _client() -> MongoClient:
     global _CLIENT
     if _CLIENT is None:
-        _CLIENT = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
+        try:
+            _CLIENT = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
+        except ConfigurationError as exc:
+            raise RuntimeError(
+                "Invalid MONGO_URI configuration. Verify it has no empty host, trailing comma, or surrounding whitespace."
+            ) from exc
     return _CLIENT
 
 

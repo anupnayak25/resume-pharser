@@ -91,7 +91,7 @@ export default function DashboardPage() {
                   type="file"
                   multiple
                   accept=".pdf,.doc,.docx,.txt"
-                  className="absolute inset-0 opacity-0"
+                  className="absolute inset-0 opacity-0 pointer-events-none"
                   onChange={(e) => addFiles(e.target.files)}
                 />
                 <div className="text-4xl">📂</div>

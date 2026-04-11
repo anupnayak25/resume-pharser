@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
-function wsUrlForScanId(scanId) {
+function wsUrlForScanId(scanId, token) {
   const base = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const u = new URL(base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   u.pathname = `/ws/progress/${encodeURIComponent(scanId)}`;
+
+  // Preferred auth path: token in query string (backend supports this).
+  // This avoids any race with the auth_required handshake.
+  if (token) u.searchParams.set('token', token);
+
   return u.toString();
 }
 
@@ -25,85 +30,119 @@ export default function ProgressPage() {
   const [error, setError] = useState('');
 
   const startedRef = useRef(false);
+  const wsRef = useRef(null);
+  const pingTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
-  const socketUrl = useMemo(() => (scanId ? wsUrlForScanId(scanId) : null), [scanId]);
+  const token = useMemo(() => localStorage.getItem('token') || '', []);
+  const socketUrl = useMemo(
+    () => (scanId ? wsUrlForScanId(scanId, token) : null),
+    [scanId, token]
+  );
 
   useEffect(() => {
+    // Always mark mounted at the beginning of each effect setup.
+    // In React dev StrictMode, cleanup+setup can run twice; this prevents
+    // isMountedRef from getting stuck false when startedRef short-circuits.
+    isMountedRef.current = true;
+
     if (!scanId || !files || !jdText) {
       navigate('/', { replace: true });
+      return;
+    }
+
+    if (!token) {
+      localStorage.removeItem('token');
+      navigate('/login', { replace: true });
       return;
     }
 
     if (startedRef.current) return;
     startedRef.current = true;
 
-    let ws;
-    let isMounted = true;
-    let pingTimer;
-
     const run = async () => {
       try {
-        ws = new WebSocket(socketUrl);
+        wsRef.current = new WebSocket(socketUrl);
+        const ws = wsRef.current;
+
         ws.onopen = () => {
-          try {
-            const token = localStorage.getItem('token');
-            if (token) ws.send(JSON.stringify({ type: 'auth', token }));
-            ws.send('ping');
-          } catch (_) {}
-          pingTimer = setInterval(() => {
-            try {
-              ws.send('ping');
-            } catch (_) {}
-          }, 25000);
-        };
-        ws.onmessage = (evt) => {
-          try {
-            const msg = JSON.parse(evt.data);
-            if (!isMounted) return;
-            if (msg.type === 'start') {
-              setStatus(`Analysing ${msg.total} resume(s)…`);
-              setPercent(0);
-            } else if (msg.type === 'progress') {
-              setPercent(msg.percent ?? 0);
-              setStatus(`Processed ${msg.processed}/${msg.total}: ${msg.filename}`);
-            } else if (msg.type === 'error') {
-              setError(msg.message || 'Processing failed');
-              setStatus('Failed');
-            } else if (msg.type === 'done') {
-              setPercent(100);
-              setStatus('Finalizing results…');
-            }
-          } catch (_) {
-            // ignore non-json
+          if (!isMountedRef.current) {
+            ws.close();
+            return;
           }
         };
 
-        // Kick off the actual scoring request (runs in parallel with WS updates)
+        ws.onerror = (evt) => {
+          if (!isMountedRef.current) return;
+          setError('Connection error. Please try again.');
+          setStatus('Failed');
+        };
+
+        ws.onclose = () => {};
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data);
+            if (!isMountedRef.current) return;
+
+            if (msg.type === 'start') {
+              setStatus(`Analysing ${msg.total} resume(s)…`);
+              setPercent(0);
+              return;
+            }
+
+            if (msg.type === 'progress') {
+              setPercent(msg.percent ?? 0);
+              setStatus(`Processed ${msg.processed}/${msg.total}: ${msg.filename}`);
+              return;
+            }
+
+            if (msg.type === 'done') {
+              setPercent(100);
+              setStatus('Finalizing results…');
+              return;
+            }
+
+            if (msg.type === 'error') {
+              setError(msg.message || 'Server error');
+              setStatus('Failed');
+              return;
+            }
+          } catch (err) {
+            // Ignore non-JSON or malformed WS payloads.
+          }
+        };
+
+        // Kick off the actual scoring request
         const data = await api.checkScore(files, jdText, jobName || undefined, scanId);
+        
+        if (!isMountedRef.current) {
+          ws.close();
+          return;
+        }
+        
         sessionStorage.setItem('scoreResult', JSON.stringify(data));
         navigate('/results', { replace: true });
       } catch (err) {
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         setError(err.message || 'Upload failed. Please try again.');
         setStatus('Failed');
-      } finally {
-        if (pingTimer) clearInterval(pingTimer);
-        try {
-          ws?.close();
-        } catch (_) {}
       }
     };
 
     run();
 
     return () => {
-      isMounted = false;
-      if (pingTimer) clearInterval(pingTimer);
+      isMountedRef.current = false;
+      if (pingTimerRef.current) clearInterval(pingTimerRef.current);
+      // Only close if WebSocket exists and is fully OPEN (not CONNECTING)
       try {
-        ws?.close();
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.close();
+        }
       } catch (_) {}
     };
-  }, [scanId, files, jdText, jobName, socketUrl, navigate]);
+  }, [scanId, files, jdText, jobName, socketUrl, navigate, token]);
 
   const card = 'rounded-2xl border border-white/10 bg-white/5 shadow-xl backdrop-blur-xl';
 

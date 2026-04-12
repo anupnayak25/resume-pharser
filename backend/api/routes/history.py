@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from core import db as db_layer
 from core.security import get_current_user
@@ -41,6 +43,21 @@ async def jobs(
     return items
 
 
+@router.delete("/jobs/{job_id}")
+async def delete_job(
+    job_id: int,
+    current_user=Depends(get_current_user),
+) -> dict[str, bool]:
+    deleted = await asyncio.to_thread(
+        db_layer.delete_job,
+        int(current_user["id"]),
+        job_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"ok": True}
+
+
 @router.get("/history", response_model=list[HistoryItem])
 async def history(
     limit: int = 50,
@@ -65,6 +82,7 @@ async def history(
                 id=int(r["id"]),
                 job_name=r["job_name"],
                 filename=r["filename"],
+                candidate_name=r.get("candidate_name"),
                 score=float(r["score"]),
                 similarity=float(r["similarity"]),
                 skill_score=float(r["skill_score"]) if r["skill_score"] is not None else None,
@@ -74,3 +92,55 @@ async def history(
             )
         )
     return items
+
+
+@router.delete("/history/{history_id}")
+async def delete_history_item(
+    history_id: int,
+    current_user=Depends(get_current_user),
+) -> dict[str, bool]:
+    deleted = await asyncio.to_thread(
+        db_layer.delete_history_item,
+        int(current_user["id"]),
+        history_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="History item not found")
+    return {"ok": True}
+
+
+@router.get("/history/{history_id}/resume")
+async def view_history_resume(
+    history_id: int,
+    current_user=Depends(get_current_user),
+):
+    doc = await asyncio.to_thread(
+        db_layer.get_history_file,
+        int(current_user["id"]),
+        history_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Resume file not found")
+
+    filename = str(doc.get("filename") or f"resume-{history_id}")
+    content_type = str(doc.get("content_type") or "application/octet-stream")
+    file_data = bytes(doc.get("file_data") or b"")
+
+    headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+    return StreamingResponse(BytesIO(file_data), media_type=content_type, headers=headers)
+
+
+@router.delete("/history")
+async def delete_history(
+    job_id: int | None = None,
+    current_user=Depends(get_current_user),
+) -> dict[str, int | bool]:
+    if job_id is None:
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    deleted_count = await asyncio.to_thread(
+        db_layer.delete_history,
+        int(current_user["id"]),
+        job_id,
+    )
+    return {"ok": True, "deleted_count": deleted_count}

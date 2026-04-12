@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../api';
 
 function scoreBadgeClass(score) {
   const pct = Math.round(score * 100);
@@ -42,18 +43,39 @@ function ScoreBar({ label, value }) {
   );
 }
 
-function ResultCard({ item, rank }) {
+function ResultCard({ item, rank, isPoor, onViewResume }) {
   const overallPct = Math.round(item.score * 100);
   const rankIcon = ['🥇', '🥈', '🥉'][rank] ?? `#${rank + 1}`;
   const rankText = rank === 0 ? 'text-yellow-300' : rank === 1 ? 'text-slate-200' : rank === 2 ? 'text-amber-400' : 'text-slate-400';
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur-xl">
+    <div
+      className={[
+        'rounded-2xl border bg-white/5 p-6 shadow-xl backdrop-blur-xl',
+        isPoor ? 'border-red-500/40 bg-red-500/10' : 'border-white/10',
+      ].join(' ')}
+    >
       <div className="text-xs font-bold uppercase tracking-widest text-slate-400">
         <span className={['mr-2 text-base', rankText].join(' ')}>{rankIcon}</span>
         Rank {rank + 1}
       </div>
-      <div className="mt-2 break-all text-sm font-semibold">📄 {item.filename}</div>
+      {isPoor && (
+        <div className="mt-2 inline-flex rounded-full border border-red-400/40 bg-red-500/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-red-200">
+          Poor Match
+        </div>
+      )}
+      <div className="mt-2 break-all text-sm font-semibold">📄 {item.candidate_name || item.filename}</div>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-200 transition hover:border-indigo-400/40 hover:bg-indigo-500/20 disabled:opacity-50"
+          disabled={item.history_id == null}
+          onClick={() => onViewResume(item)}
+        >
+          View Resume
+        </button>
+      </div>
 
       <div className="mt-4 flex items-end gap-3">
         <div className="text-5xl font-extrabold leading-none tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">
@@ -89,6 +111,7 @@ function ResultCard({ item, rank }) {
 export default function ResultPage() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const raw = sessionStorage.getItem('scoreResult');
@@ -117,10 +140,27 @@ export default function ResultPage() {
   };
 
   const all = resultsRaw.map(normalizeItem);
-  const accepted = all.filter((r) => r.status !== 'rejected');
-  const rejected = all.filter((r) => r.status === 'rejected');
+  const rankedResults = [...all].sort((a, b) => b.score - a.score);
+  const accepted = rankedResults.filter((r) => r.status !== 'rejected');
+  const rejected = rankedResults.filter((r) => r.status === 'rejected');
 
-  const best = accepted[0] ?? all[0];
+  const best = accepted[0] ?? rankedResults[0];
+
+  const onViewResume = async (item) => {
+    if (item.history_id == null) {
+      setError('Resume preview is not available for this item.');
+      return;
+    }
+    setError('');
+    try {
+      const blob = await api.viewResume(item.history_id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      setError(err.message || 'Failed to open resume.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -164,7 +204,7 @@ export default function ResultPage() {
         <div className="flex flex-wrap gap-3">
           <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
             <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Top Candidate</div>
-            <div className="mt-2 break-all text-sm font-semibold">🥇 {best.filename}</div>
+            <div className="mt-2 break-all text-sm font-semibold">🥇 {best.candidate_name || best.filename}</div>
           </div>
           <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl">
             <div className="text-xs font-medium uppercase tracking-wider text-slate-400">Best Score</div>
@@ -190,44 +230,28 @@ export default function ResultPage() {
         </div>
       )}
 
+      {error && (
+        <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300">
+          {error}
+        </div>
+      )}
+
       {/* Result cards grid */}
-      {accepted.length > 0 ? (
+      {rankedResults.length > 0 ? (
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {accepted.map((item, i) => (
-            <ResultCard key={item.filename + i} item={item} rank={i} />
+          {rankedResults.map((item, i) => (
+            <ResultCard
+              key={item.filename + i}
+              item={item}
+              rank={i}
+              isPoor={item.status === 'rejected'}
+              onViewResume={onViewResume}
+            />
           ))}
         </div>
       ) : (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-300 shadow-xl backdrop-blur-xl">
           No resumes met the required quota of <span className="font-semibold text-slate-100">{quotaPct}%</span>.
-        </div>
-      )}
-
-      {/* Rejected */}
-      {rejected.length > 0 && (
-        <div className="mt-10">
-          <h2 className="text-sm font-bold text-slate-200">Rejected</h2>
-          <p className="mt-1 text-xs text-slate-400">Resumes below the required quota (≥ {quotaPct}% overall match).</p>
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-white/5">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">File</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Score</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Comment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rejected.map((r, i) => (
-                  <tr key={r.filename + i} className="border-t border-white/10">
-                    <td className="px-4 py-3 text-sm text-slate-300">📄 {r.filename}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-red-200">{Math.round(r.score * 100)}%</td>
-                    <td className="px-4 py-3 text-sm text-slate-200">{r.rejection_reason || 'Below quota'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 

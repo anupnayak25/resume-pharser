@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional
 
+from bson.binary import Binary
 from fastapi import HTTPException
 from pymongo import MongoClient, ReturnDocument
 from pymongo.collection import Collection
@@ -72,6 +73,7 @@ def init_db() -> None:
     users = database["users"]
     jobs = database["jobs"]
     history = database["history"]
+    history_files = database["history_files"]
 
     users.create_indexes([IndexModel([("email", 1)], unique=True, name="uniq_email")])
 
@@ -87,6 +89,12 @@ def init_db() -> None:
             IndexModel([("user_id", 1), ("id", -1)], name="hist_user_id_desc"),
             IndexModel([("user_id", 1), ("job_id", 1), ("id", -1)], name="hist_user_job_id_desc"),
             IndexModel([("job_id", 1)], name="hist_job"),
+        ]
+    )
+
+    history_files.create_indexes(
+        [
+            IndexModel([("user_id", 1), ("history_id", 1)], unique=True, name="hist_file_user_history"),
         ]
     )
 
@@ -159,19 +167,24 @@ def save_history(
     job_id: Optional[int],
     job_name: Optional[str],
     filename: str,
+    candidate_name: Optional[str],
+    content_type: Optional[str],
+    file_data: bytes,
     score: float,
     similarity: float,
     skill_score: Optional[float],
     experience_score: Optional[float],
     extracted_years: Optional[float],
-) -> None:
+) -> int:
+    history_id = _next_id("history")
     created_at = utcnow().isoformat()
     history_doc = {
-        "id": _next_id("history"),
+        "id": history_id,
         "user_id": int(user_id),
         "job_id": int(job_id) if job_id is not None else None,
         "job_name": job_name,
         "filename": filename,
+        "candidate_name": candidate_name,
         "score": float(score),
         "similarity": float(similarity),
         "skill_score": float(skill_score) if skill_score is not None else None,
@@ -180,6 +193,18 @@ def save_history(
         "created_at": created_at,
     }
     _col("history").insert_one(history_doc)
+
+    _col("history_files").insert_one(
+        {
+            "user_id": int(user_id),
+            "history_id": history_id,
+            "filename": filename,
+            "content_type": content_type or "application/octet-stream",
+            "file_data": Binary(file_data),
+            "created_at": created_at,
+        }
+    )
+    return history_id
 
 
 def list_history(user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
@@ -258,3 +283,50 @@ def list_jobs(user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
     ]
 
     return list(_col("jobs").aggregate(pipeline))
+
+
+def delete_history_item(user_id: int, history_id: int) -> bool:
+    result = _col("history").delete_one({"user_id": int(user_id), "id": int(history_id)})
+    if result.deleted_count:
+        _col("history_files").delete_many({"user_id": int(user_id), "history_id": int(history_id)})
+    return bool(result.deleted_count)
+
+
+def delete_history(user_id: int, job_id: Optional[int] = None) -> int:
+    query: Dict[str, Any] = {"user_id": int(user_id)}
+    if job_id is not None:
+        query["job_id"] = int(job_id)
+
+    ids = [
+        int(doc["id"])
+        for doc in _col("history").find(query, {"_id": 0, "id": 1})
+        if doc.get("id") is not None
+    ]
+    result = _col("history").delete_many(query)
+    if ids:
+        _col("history_files").delete_many({"user_id": int(user_id), "history_id": {"$in": ids}})
+    return int(result.deleted_count)
+
+
+def delete_job(user_id: int, job_id: int) -> bool:
+    jobs_result = _col("jobs").delete_one({"user_id": int(user_id), "id": int(job_id)})
+    if jobs_result.deleted_count == 0:
+        return False
+
+    hist_query = {"user_id": int(user_id), "job_id": int(job_id)}
+    ids = [
+        int(doc["id"])
+        for doc in _col("history").find(hist_query, {"_id": 0, "id": 1})
+        if doc.get("id") is not None
+    ]
+    _col("history").delete_many(hist_query)
+    if ids:
+        _col("history_files").delete_many({"user_id": int(user_id), "history_id": {"$in": ids}})
+    return True
+
+
+def get_history_file(user_id: int, history_id: int) -> Optional[Dict[str, Any]]:
+    return _col("history_files").find_one(
+        {"user_id": int(user_id), "history_id": int(history_id)},
+        {"_id": 0, "filename": 1, "content_type": 1, "file_data": 1},
+    )

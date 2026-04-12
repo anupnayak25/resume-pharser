@@ -20,6 +20,8 @@ export default function HistoryPage() {
   const [items, setItems] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [jobId, setJobId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [deletingJob, setDeletingJob] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
@@ -71,6 +73,94 @@ export default function HistoryPage() {
     init();
   }, []);
 
+  const refreshJobsAndHistory = async (preferredJobId = jobId) => {
+    const jobRuns = await api.jobs(50, 0);
+    setJobs(jobRuns);
+
+    let nextJobId = preferredJobId;
+    if (nextJobId != null && !jobRuns.some((j) => j.id === nextJobId)) {
+      nextJobId = null;
+    }
+    if (nextJobId == null) {
+      nextJobId = jobRuns?.length ? jobRuns[0].id : null;
+    }
+
+    setJobId(nextJobId);
+    const data = await api.history(PER_PAGE, 0, nextJobId);
+    setItems(data);
+    setPage(0);
+  };
+
+  const onDeleteHistory = async (item) => {
+    const who = item.candidate_name || item.filename;
+    const confirmed = window.confirm(`Delete history for \"${who}\"?`);
+    if (!confirmed) return;
+
+    setError('');
+    setDeletingId(item.id);
+    try {
+      await api.deleteHistory(item.id);
+
+      const nextCount = items.length - 1;
+      const nextPage = nextCount === 0 && page > 0 ? page - 1 : page;
+      await load(nextPage);
+    } catch (err) {
+      if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized')) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        setError(err.message || 'Failed to delete history item.');
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const onViewResume = async (item) => {
+    setError('');
+    try {
+      const blob = await api.viewResume(item.id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized')) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        setError(err.message || 'Failed to open resume.');
+      }
+    }
+  };
+
+  const onDeleteSelectedJob = async () => {
+    if (!selectedJob) {
+      setError('Please select a job description first.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete selected job \"${selectedJobLabel}\" and all its history?`
+    );
+    if (!confirmed) return;
+
+    setError('');
+    setDeletingJob(true);
+    try {
+      await api.deleteJob(selectedJob.id);
+      await refreshJobsAndHistory(selectedJob.id);
+    } catch (err) {
+      if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized')) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        setError(err.message || 'Failed to delete selected job.');
+      }
+    } finally {
+      setDeletingJob(false);
+    }
+  };
+
   const selectedJob = jobs.find((j) => j.id === jobId) || null;
   const selectedJdText = typeof selectedJob?.jd_text === 'string' ? selectedJob.jd_text.trim() : '';
   const selectedJobLabel = selectedJob
@@ -84,6 +174,11 @@ export default function HistoryPage() {
   const topScore = selectedJob?.best_score != null
     ? Math.round(selectedJob.best_score * 100)
     : (items.length ? Math.round(Math.max(...items.map((i) => i.score)) * 100) : null);
+
+  const rankedItems = [...items].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   const card = 'rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl';
   const label = 'text-xs font-medium uppercase tracking-wider text-slate-400';
@@ -139,6 +234,15 @@ export default function HistoryPage() {
                 ) : (
                   '↻ Refresh'
                 )}
+              </button>
+
+              <button
+                id="delete-selected-job-btn"
+                className="inline-flex items-center justify-center rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:opacity-50"
+                onClick={onDeleteSelectedJob}
+                disabled={loading || deletingJob || !selectedJob}
+              >
+                {deletingJob ? 'Deleting job...' : 'Delete Job'}
               </button>
             </div>
           </div>
@@ -225,7 +329,7 @@ export default function HistoryPage() {
               <thead>
                 <tr className="bg-white/5">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">#</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">File</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Candidate</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Job</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Score</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Similarity</th>
@@ -233,18 +337,19 @@ export default function HistoryPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Experience</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Yrs</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => {
+                {rankedItems.map((item, i) => {
                   const pct = Math.round(item.score * 100);
                   return (
                     <tr key={item.id} className="border-t border-white/10">
-                      <td className="px-4 py-3 text-xs text-slate-500">{page * PER_PAGE + i + 1}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-slate-300">#{page * PER_PAGE + i + 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex max-w-[220px] items-center gap-2">
                           <span>📄</span>
-                          <span className="truncate text-sm font-medium text-slate-200" title={item.filename}>{item.filename}</span>
+                          <span className="truncate text-sm font-medium text-slate-200" title={item.candidate_name || item.filename}>{item.candidate_name || item.filename}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-400">{item.job_name || '—'}</td>
@@ -258,6 +363,24 @@ export default function HistoryPage() {
                       <td className="px-4 py-3 text-sm text-slate-400">{item.experience_score != null ? `${Math.round(item.experience_score * 100)}%` : '—'}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-violet-200">{item.extracted_years != null ? item.extracted_years.toFixed(1) : '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500">{fmt(item.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          className="mr-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-200 transition hover:border-indigo-400/40 hover:bg-indigo-500/20 disabled:opacity-50"
+                          onClick={() => onViewResume(item)}
+                          disabled={loading}
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200 transition hover:border-red-400/40 hover:bg-red-500/20 disabled:opacity-50"
+                          onClick={() => onDeleteHistory(item)}
+                          disabled={loading || deletingId === item.id}
+                        >
+                          {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

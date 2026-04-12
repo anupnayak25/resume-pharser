@@ -11,8 +11,9 @@ from core.config import JWT_ALGORITHM, JWT_SECRET_KEY, MAX_FILES_PER_REQUEST, MI
 from core.progress import broker
 from core.security import get_current_user
 from schemas import ScoreError, ScoreItem, ScoreQuota, ScoreResponse
+from services.text_utils import clean_text, extract_candidate_name
 from services.scoring import score_resume_against_jd
-from services.text_extraction import extract_and_clean_text
+from services.text_extraction import extract_text_for_file
 
 
 router = APIRouter(tags=["scoring"])
@@ -134,25 +135,32 @@ async def check_score(
     await push({"type": "start", "total": total})
 
     async def process_one(filename: str, content_type: Optional[str], data: bytes) -> ScoreItem:
-        extracted = await asyncio.to_thread(extract_and_clean_text, filename, content_type, data)
+        extracted_raw = await asyncio.to_thread(extract_text_for_file, filename, content_type, data)
+        extracted = clean_text(extracted_raw)
         if not extracted:
             raise HTTPException(status_code=422, detail=f"No text extracted from {filename}")
 
-        scores = await asyncio.to_thread(score_resume_against_jd, extracted, jd_text)
-        item = ScoreItem(filename=filename, **scores)
+        candidate_name = extract_candidate_name(extracted_raw, filename)
 
-        await asyncio.to_thread(
+        scores = await asyncio.to_thread(score_resume_against_jd, extracted, jd_text)
+        item = ScoreItem(filename=filename, candidate_name=candidate_name, **scores)
+
+        history_id = await asyncio.to_thread(
             db_layer.save_history,
             int(current_user["id"]),
             job_id,
             job_name,
             filename,
+            candidate_name,
+            content_type,
+            data,
             item.score,
             item.similarity,
             item.skill_score,
             item.experience_score,
             item.extracted_years,
         )
+        item.history_id = int(history_id)
 
         return item
 

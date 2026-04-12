@@ -40,16 +40,65 @@ def extract_text_from_docx(data: bytes) -> str:
 
 
 def extract_text_from_image(data: bytes) -> str:
+    import io
+    first_error: str | None = None
+
+    def _preprocessed_images():
+        from PIL import Image, ImageEnhance, ImageOps
+
+        base = Image.open(io.BytesIO(data)).convert("RGB")
+        gray = ImageOps.grayscale(base)
+        contrast = ImageEnhance.Contrast(gray).enhance(2.2)
+        # Upscale to improve OCR on compressed screenshots.
+        upscaled = contrast.resize((contrast.width * 2, contrast.height * 2))
+        return [base, gray, contrast, upscaled]
+
     try:
         import pytesseract
-        from PIL import Image
+        for image in _preprocessed_images():
+            text = pytesseract.image_to_string(image)
+            if text and text.strip():
+                return text
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OCR dependencies missing (pytesseract/Pillow): {e}")
+        first_error = f"pytesseract failed: {e}"
 
-    import io
+    try:
+        import numpy as np
+        from rapidocr_onnxruntime import RapidOCR
 
-    image = Image.open(io.BytesIO(data))
-    return pytesseract.image_to_string(image)
+        ocr = RapidOCR()
+        for image in _preprocessed_images():
+            arr = np.array(image)
+            result, _ = ocr(arr)
+            if not result:
+                continue
+
+            lines: list[str] = []
+            for row in result:
+                if not isinstance(row, (list, tuple)):
+                    continue
+                txt = ""
+                if len(row) >= 3 and isinstance(row[1], str):
+                    txt = row[1]
+                elif len(row) >= 2:
+                    txt = str(row[1])
+                txt = txt.strip()
+                if txt:
+                    lines.append(txt)
+
+            merged = "\n".join(lines).strip()
+            if merged:
+                return merged
+        return ""
+    except Exception as e:
+        extra = f"; fallback rapidocr failed: {e}"
+        hint = (
+            " Install OS packages: tesseract-ocr libgl1 libglib2.0-0 "
+            "(Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y tesseract-ocr libgl1 libglib2.0-0)."
+        )
+        detail = (first_error or "Image OCR failed") + extra
+        detail += hint
+        raise HTTPException(status_code=500, detail=detail)
 
 
 def extract_text_from_txt(data: bytes) -> str:

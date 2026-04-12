@@ -23,7 +23,10 @@ uvicorn app:app --reload --port 8000
 
 ### Notes
 
-- For OCR (image resumes), Tesseract must be installed on your OS (e.g. `tesseract-ocr` on Ubuntu).
+- OCR for image resumes supports two engines:
+	- Preferred: Tesseract (`pytesseract`) for best quality
+	- Fallback: `rapidocr-onnxruntime` (works without system Tesseract)
+- If Tesseract is not installed, image OCR will still try fallback automatically.
 - Storage uses MongoDB.
 	- Start a local MongoDB quickly (Docker): `docker run --rm -p 27017:27017 --name resume-pharser-mongo mongo:7`
 	- Configure via env vars:

@@ -78,7 +78,7 @@ export default function DashboardPage() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             <div>
-              <div className={label}>Resumes (PDF / DOCX / TXT)</div>
+              <div className={label}>Resumes (PDF / DOCX / TXT / Image)</div>
               <div
                 id="drop-zone"
                 className={
@@ -98,7 +98,7 @@ export default function DashboardPage() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".pdf,.doc,.docx,.txt"
+                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,image/*"
                   className="absolute inset-0 opacity-0 pointer-events-none"
                   onChange={(e) => addFiles(e.target.files)}
                 />
@@ -108,7 +108,7 @@ export default function DashboardPage() {
                     {dragging ? 'Drop files here' : 'Click or drag & drop resumes'}
                   </div>
                   <div className="mt-1 text-xs text-slate-400">
-                    Supports PDF, DOCX, TXT · Max 1000 files
+                    Supports PDF, DOCX, TXT, PNG, JPG, JPEG, WEBP, TIFF, BMP · Max 1000 files
                   </div>
                 </div>
               </div>

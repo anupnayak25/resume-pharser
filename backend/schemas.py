@@ -29,6 +29,8 @@ class UserResponse(BaseModel):
 
 class ScoreItem(BaseModel):
     filename: str
+    candidate_name: Optional[str] = None
+    history_id: Optional[int] = None
     score: float
     similarity: float
     skill_score: Optional[float] = None
@@ -58,6 +60,7 @@ class HistoryItem(BaseModel):
     id: int
     job_name: Optional[str]
     filename: str
+    candidate_name: Optional[str] = None
     score: float
     similarity: float
     skill_score: Optional[float]

@@ -14,11 +14,39 @@ async function handleResponse(res) {
     let detail = `HTTP ${res.status}`;
     try {
       const json = await res.json();
-      detail = json.detail || JSON.stringify(json);
+      if (typeof json.detail === 'string') {
+        detail = json.detail;
+      } else if (json.detail && typeof json.detail === 'object') {
+        if (json.detail.message) {
+          detail = json.detail.message;
+          if (Array.isArray(json.detail.errors) && json.detail.errors.length > 0) {
+            const first = json.detail.errors[0];
+            if (first?.error) {
+              detail = `${detail}: ${first.error}`;
+            }
+          }
+        } else {
+          detail = JSON.stringify(json.detail);
+        }
+      } else {
+        detail = JSON.stringify(json);
+      }
     } catch (_) {}
     throw new Error(detail);
   }
   return res.json();
+}
+
+async function handleBlobResponse(res) {
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const json = await res.json();
+      detail = json.detail || JSON.stringify(json);
+    } catch (_) {}
+    throw new Error(detail);
+  }
+  return res.blob();
 }
 
 // Auth
@@ -61,10 +89,39 @@ export const api = {
       headers: authHeaders(),
     }).then(handleResponse),
 
+  deleteJob: (jobId) =>
+    fetch(`${BASE_URL}/jobs/${jobId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }).then(handleResponse),
+
   history: (limit = 50, offset = 0, jobId) => {
     const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (jobId != null) qs.set('job_id', String(jobId));
     return fetch(`${BASE_URL}/history?${qs.toString()}`, {
+      headers: authHeaders(),
+    }).then(handleResponse);
+  },
+
+  deleteHistory: (historyId) =>
+    fetch(`${BASE_URL}/history/${historyId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }).then(handleResponse),
+
+  viewResume: (historyId) =>
+    fetch(`${BASE_URL}/history/${historyId}/resume`, {
+      headers: authHeaders(),
+    }).then(handleBlobResponse),
+
+  deleteHistoryBulk: (jobId) => {
+    if (jobId == null) {
+      throw new Error('Please select a job first.');
+    }
+    const qs = new URLSearchParams({ job_id: String(jobId) });
+    const suffix = `?${qs.toString()}`;
+    return fetch(`${BASE_URL}/history${suffix}`, {
+      method: 'DELETE',
       headers: authHeaders(),
     }).then(handleResponse);
   },

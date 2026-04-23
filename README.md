@@ -21,8 +21,29 @@ cd backend
 uvicorn app:app --reload --port 8000
 ```
 
-### Notes
+## Frontend (React)
 
+### Setup
+
+```bash
+cd frontend
+npm i
+```
+
+### Run
+
+Run from `frontend/`:
+
+```bash
+cd frontend
+npm run dev
+```
+
+
+
+### Notes
+- add the backend url in frontend .env file
+- add mongodb url at the backend file
 - OCR for image resumes supports two engines:
 	- Preferred: Tesseract (`pytesseract`) for best quality
 	- Fallback: `rapidocr-onnxruntime` (works without system Tesseract)
